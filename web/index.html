@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Netwatch</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --panel2:#f1f3f6; --text:#16191d; --muted:#667080; --border:#e2e5ea;
+  --in:#2563eb; --in-soft:rgba(37,99,235,.12); --out:#d9480f; --out-soft:rgba(217,72,15,.12);
+  --local:#7c3aed; --ok:#16a34a; --warn:#b45309; --bad:#dc2626; --accent:#111827; --sel:#eef4ff;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e1013; --panel:#16191e; --panel2:#1c2027; --text:#e6e8eb; --muted:#8b93a1; --border:#272c34;
+    --in:#60a5fa; --in-soft:rgba(96,165,250,.14); --out:#fb923c; --out-soft:rgba(251,146,60,.14);
+    --local:#a78bfa; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; --accent:#e6e8eb; --sel:#1d2a40;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;display:flex;flex-direction:column}
+button,select,input{font:inherit;color:inherit}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--panel)}
+.brand{font-weight:650;font-size:15px;letter-spacing:-.01em}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:99px;background:var(--panel2);color:var(--muted);font-size:12px;max-width:52vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.live{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.dot.err{background:var(--bad)}
+.spacer{flex:1}
+.btn{border:1px solid var(--border);background:var(--panel);padding:5px 12px;border-radius:7px;cursor:pointer}
+.btn:hover{background:var(--panel2)}
+.btn.on{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.err-banner{background:color-mix(in srgb,var(--bad) 12%,var(--panel));color:var(--bad);padding:8px 16px;border-bottom:1px solid var(--border);display:none;font-size:12.5px}
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:12px;padding:12px 16px 0}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px 12px;min-width:0}
+.stat .k{color:var(--muted);font-size:11.5px;display:flex;align-items:center;gap:6px}
+.stat .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .s{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+.chartcard{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px 10px 4px;position:relative;min-height:150px}
+.chartcard .legend{position:absolute;top:8px;right:12px;display:flex;gap:12px;color:var(--muted);font-size:11.5px}
+canvas{width:100%;height:150px;display:block}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11.5px;display:none;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.bar{display:flex;align-items:center;gap:8px;padding:12px 16px 8px;flex-wrap:wrap}
+.tabs{display:flex;gap:2px;background:var(--panel2);padding:3px;border-radius:9px}
+.tab{border:0;background:transparent;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--muted)}
+.tab.on{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.tab .n{font-size:11px;color:var(--muted);margin-left:4px;font-variant-numeric:tabular-nums}
+.search{flex:1;min-width:180px;max-width:420px;border:1px solid var(--border);background:var(--panel);border-radius:7px;padding:5px 10px}
+select{border:1px solid var(--border);background:var(--panel);border-radius:7px;padding:5px 8px}
+.main{flex:1;min-height:0;display:flex;gap:12px;padding:0 16px 12px}
+.tablewrap{flex:1;min-width:0;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px}
+table{border-collapse:separate;border-spacing:0;width:100%}
+th{position:sticky;top:0;background:var(--panel2);text-align:left;font-weight:550;color:var(--muted);font-size:11.5px;padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none;z-index:1}
+th.num,td.num{text-align:right}
+th .arrow{opacity:.7}
+td{padding:5px 10px;border-bottom:1px solid var(--border);white-space:nowrap;max-width:360px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+td.num{font-variant-numeric:tabular-nums}
+td.mono,.mono{font-family:var(--mono);font-size:12px}
+td.wrap{white-space:normal;min-width:240px}
+tr{cursor:pointer}
+tbody tr:hover td{background:var(--panel2)}
+tr.sel td{background:var(--sel)!important}
+.sub{color:var(--muted);font-size:11.5px}
+.d{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;min-width:46px;text-align:center}
+.d.in{color:var(--in);background:var(--in-soft)}
+.d.out{color:var(--out);background:var(--out-soft)}
+.d.local{color:var(--local);background:color-mix(in srgb,var(--local) 14%,transparent)}
+.cin{color:var(--in)} .cout{color:var(--out)}
+.st{font-size:11.5px}
+.st.open,.st.active{color:var(--ok)} .st.connecting{color:var(--warn)} .st.reset{color:var(--bad)} .st.closed,.st.idle{color:var(--muted)}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+aside{width:420px;flex:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:auto;display:none;padding:12px 14px}
+aside.open{display:block}
+aside h3{margin:0 0 2px;font-size:14px;display:flex;align-items:center;gap:8px}
+aside .x{margin-left:auto;border:0;background:none;cursor:pointer;color:var(--muted);font-size:16px}
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:3px 10px;margin:10px 0}
+.kv .k{color:var(--muted)}
+.kv .v{word-break:break-all;font-family:var(--mono);font-size:12px}
+.section{margin-top:12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+pre.hex{font-family:var(--mono);font-size:11px;background:var(--panel2);padding:8px;border-radius:6px;overflow:auto;margin:6px 0}
+.link{color:var(--in);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+details.help{margin:0 16px 12px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px 14px}
+details.help summary{cursor:pointer;color:var(--muted)}
+details.help ul{margin:6px 0;padding-left:18px}
+details.help li{margin:2px 0}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}
+.note{color:var(--muted);font-size:11.5px;padding:6px 10px}
+@media (max-width:900px){
+  .top{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .main{flex-direction:column}
+  aside{width:auto}
+  .cols2{grid-template-columns:1fr}
+  .pill{max-width:40vw}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Netwatch</div>
+  <span class="pill" id="status"><span class="dot" id="dot"></span><span id="statusText">connecting…</span></span>
+  <div class="spacer"></div>
+  <button class="btn" id="pauseBtn" title="Freeze the view (capture keeps running)">Pause</button>
+  <button class="btn" id="clearBtn" title="Reset all counters and tables">Clear</button>
+</header>
+<div class="err-banner" id="err"></div>
+
+<div class="top">
+  <div class="stats">
+    <div class="stat"><div class="k"><span class="sw" style="background:var(--in)"></span>Download now</div><div class="v cin" id="rIn">–</div><div class="s" id="rInPk">&nbsp;</div></div>
+    <div class="stat"><div class="k"><span class="sw" style="background:var(--out)"></span>Upload now</div><div class="v cout" id="rOut">–</div><div class="s" id="rOutPk">&nbsp;</div></div>
+    <div class="stat"><div class="k">Active connections</div><div class="v" id="active">–</div><div class="s" id="activeSub">&nbsp;</div></div>
+    <div class="stat"><div class="k">Received (inbound)</div><div class="v" id="tIn">–</div><div class="s" id="pIn">&nbsp;</div></div>
+    <div class="stat"><div class="k">Sent (outbound)</div><div class="v" id="tOut">–</div><div class="s" id="pOut">&nbsp;</div></div>
+    <div class="stat"><div class="k">Watching for</div><div class="v" id="uptime">–</div><div class="s" id="uptimeSub">&nbsp;</div></div>
+  </div>
+  <div class="chartcard">
+    <div class="legend"><span><span class="sw" style="background:var(--in)"></span> in</span><span><span class="sw" style="background:var(--out)"></span> out</span><span>last 3 min</span></div>
+    <canvas id="chart"></canvas>
+    <div class="tip" id="tip"></div>
+  </div>
+</div>
+
+<div class="bar">
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="apps">Apps<span class="n" id="n-apps"></span></button>
+    <button class="tab" data-tab="conns">Connections<span class="n" id="n-conns"></span></button>
+    <button class="tab" data-tab="hosts">Remote hosts<span class="n" id="n-hosts"></span></button>
+    <button class="tab" data-tab="dns">DNS lookups<span class="n" id="n-dns"></span></button>
+    <button class="tab" data-tab="packets">Packets<span class="n" id="n-packets"></span></button>
+  </div>
+  <input class="search" id="q" placeholder="Filter: app, host, IP, port, protocol…" autocomplete="off" spellcheck="false">
+  <select id="dir" title="Direction">
+    <option value="all">In + out</option><option value="in">Inbound only</option><option value="out">Outbound only</option>
+  </select>
+  <select id="proto" title="Protocol">
+    <option value="all">All protocols</option><option>TCP</option><option>UDP</option><option>QUIC</option><option>TLS</option><option>DNS</option><option>ICMP</option><option>ARP</option>
+  </select>
+</div>
+
+<div class="main">
+  <div class="tablewrap" id="wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table><div class="empty" id="empty" style="display:none"></div></div>
+  <aside id="detail"></aside>
+</div>
+
+<details class="help">
+  <summary>What information does Netwatch show, and what can't it see?</summary>
+  <div class="cols2">
+    <div>
+      <b>Per packet</b>
+      <ul>
+        <li>Time (µs), direction (in/out), network interface (en0 Wi-Fi, utun VPN…)</li>
+        <li>App name + PID that owns the socket (from the macOS kernel), and the app it acts on behalf of</li>
+        <li>Source/destination IP and port, MAC addresses, size on the wire</li>
+        <li>IP details: TTL/hop limit, IP ID, flow label, DSCP/ECN, fragments</li>
+        <li>TCP: flags (SYN/ACK/FIN/RST/PSH), sequence & ack numbers, window, MSS/options</li>
+        <li>UDP length, ICMP type (ping, unreachable, neighbor discovery), ARP who-has</li>
+        <li>First 256 bytes of payload as a hex dump</li>
+      </ul>
+    </div>
+    <div>
+      <b>Decoded from the unencrypted parts</b>
+      <ul>
+        <li>DNS / mDNS: every name looked up and the IPs returned → used to name remote hosts</li>
+        <li>TLS: the website name (SNI), ALPN (h2/http1.1), TLS version & cipher</li>
+        <li>QUIC/HTTP-3: version and packet type; plain HTTP: request line, Host, User-Agent</li>
+        <li>DHCP (your IP, router, DNS servers), NTP, SSDP/UPnP device announcements</li>
+        <li>Grouped: connections (bytes each way, state, who initiated), apps (live rate), remote hosts with approximate owner (Google, Cloudflare, Apple…)</li>
+      </ul>
+      <b>Not visible</b>
+      <ul>
+        <li>Contents of HTTPS / QUIC / VPN traffic — it is encrypted end to end</li>
+        <li>Names for hosts reached via encrypted DNS (DoH) or QUIC, unless seen elsewhere</li>
+      </ul>
+    </div>
+  </div>
+</details>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const S = { tab: "apps", paused: false, lastId: 0, packets: [], snap: null, sort: {}, sel: null, rows: [] };
+const MAXP = 5000;
+
+// ---------- formatting ----------
+function fb(n){ if(!n) return "0 B"; const u=["B","KB","MB","GB","TB"]; let i=0; while(n>=1024&&i<4){n/=1024;i++} return (i?n.toFixed(n<10?2:n<100?1:0):Math.round(n))+" "+u[i]; }
+const fr = n => fb(n)+"/s";
+const fnum = n => (n||0).toLocaleString();
+function ft(t){ const d=new Date(t*1000); return d.toLocaleTimeString([], {hour12:false})+"."+String(d.getMilliseconds()).padStart(3,"0"); }
+function ago(t){ if(!S.snap) return ""; const s=Math.max(0,S.snap.now-t); if(s<2) return "now"; if(s<60) return Math.floor(s)+"s ago"; if(s<3600) return Math.floor(s/60)+"m ago"; return Math.floor(s/3600)+"h ago"; }
+function dur(s){ s=Math.floor(s); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return h? `${h}h ${m}m` : m? `${m}m ${x}s` : `${x}s`; }
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ep = (ip,port) => !ip ? "" : (ip.includes(":") ? `[${ip}]` : ip) + (port ? ":"+port : "");
+const dirB = d => `<span class="d ${d}">${d==="in"?"↓ IN":d==="out"?"↑ OUT":"↔ LOCAL"}</span>`;
+
+// ---------- table definitions ----------
+const COLS = {
+  apps: [
+    {k:"name", l:"App", v:r=>r.name, h:r=>`<b>${esc(r.name)}</b>`},
+    {k:"pids", l:"PID(s)", v:r=>r.pids?.[0]||0, h:r=>`<span class="sub mono">${esc((r.pids||[]).slice(0,4).join(", "))}${(r.pids||[]).length>4?"…":""}</span>`},
+    {k:"rin", l:"↓ Now", n:1, v:r=>r.rin, h:r=>r.rin>0?`<span class="cin">${fr(r.rin)}</span>`:`<span class="sub">–</span>`},
+    {k:"rout", l:"↑ Now", n:1, v:r=>r.rout, h:r=>r.rout>0?`<span class="cout">${fr(r.rout)}</span>`:`<span class="sub">–</span>`},
+    {k:"bin", l:"↓ Received", n:1, v:r=>r.bin, h:r=>fb(r.bin)},
+    {k:"bout", l:"↑ Sent", n:1, v:r=>r.bout, h:r=>fb(r.bout)},
+    {k:"pk", l:"Packets in / out", n:1, v:r=>r.pin+r.pout, h:r=>`${fnum(r.pin)} / ${fnum(r.pout)}`},
+    {k:"active", l:"Active conns", n:1, v:r=>r.active, h:r=>`${r.active} <span class="sub">of ${r.conns}</span>`},
+    {k:"hosts", l:"Internet hosts", n:1, v:r=>r.hosts, h:r=>r.hosts},
+    {k:"last", l:"Last seen", n:1, v:r=>r.last, h:r=>`<span class="sub">${ago(r.last)}</span>`},
+  ],
+  conns: [
+    {k:"app", l:"App", v:r=>r.app, h:r=>esc(r.app)+(r.eapp?` <span class="sub">for ${esc(r.eapp)}</span>`:"")},
+    {k:"proto", l:"Proto", v:r=>r.proto, h:r=>esc(r.proto)},
+    {k:"host", l:"Remote host", v:r=>r.host||r.owner||r.rip, h:r=>`${esc(r.host||"—")}<div class="sub">${esc(r.owner||"")}</div>`},
+    {k:"rip", l:"Remote address", v:r=>r.rip, h:r=>`<span class="mono">${esc(ep(r.rip,r.rport))}</span>`, c:"mono"},
+    {k:"lport", l:"Local port", n:1, v:r=>r.lport, h:r=>`<span class="mono">${r.lport||""}</span>`},
+    {k:"service", l:"Service", v:r=>r.service, h:r=>esc(r.service)+(r.tls?` <span class="sub">${esc(r.tls)}</span>`:"")},
+    {k:"bin", l:"↓ In", n:1, v:r=>r.bin, h:r=>`<span class="cin">${fb(r.bin)}</span>`},
+    {k:"bout", l:"↑ Out", n:1, v:r=>r.bout, h:r=>`<span class="cout">${fb(r.bout)}</span>`},
+    {k:"pk", l:"Pkts", n:1, v:r=>r.pin+r.pout, h:r=>fnum(r.pin+r.pout)},
+    {k:"state", l:"State", v:r=>r.state, h:r=>`<span class="st ${r.state}">${r.state}</span>${r.initiator?`<div class="sub">by ${esc(r.initiator)}</div>`:""}`},
+    {k:"last", l:"Last seen", n:1, v:r=>r.last, h:r=>`<span class="sub">${ago(r.last)}</span>`},
+  ],
+  hosts: [
+    {k:"name", l:"Host name", v:r=>r.name||"~", h:r=>r.name?esc(r.name):`<span class="sub">unknown</span>`},
+    {k:"ip", l:"IP address", v:r=>r.ip, h:r=>`<span class="mono">${esc(r.ip)}</span>`},
+    {k:"owner", l:"Owner (approx.)", v:r=>r.owner, h:r=>esc(r.owner||"")},
+    {k:"bin", l:"↓ From it", n:1, v:r=>r.bin, h:r=>`<span class="cin">${fb(r.bin)}</span>`},
+    {k:"bout", l:"↑ To it", n:1, v:r=>r.bout, h:r=>`<span class="cout">${fb(r.bout)}</span>`},
+    {k:"apps", l:"Apps", v:r=>(r.apps||[]).join(","), h:r=>esc((r.apps||[]).join(", "))},
+    {k:"ports", l:"Ports", v:r=>(r.ports||[])[0]||0, h:r=>`<span class="mono sub">${esc((r.ports||[]).slice(0,6).join(", "))}</span>`},
+    {k:"conns", l:"Conns", n:1, v:r=>r.conns, h:r=>r.conns},
+    {k:"last", l:"Last seen", n:1, v:r=>r.last, h:r=>`<span class="sub">${ago(r.last)}</span>`},
+  ],
+  dns: [
+    {k:"t", l:"Time", v:r=>r.t, h:r=>`<span class="mono sub">${ft(r.t)}</span>`},
+    {k:"app", l:"App", v:r=>r.app, h:r=>esc(r.app)},
+    {k:"kind", l:"", v:r=>r.kind, h:r=>r.kind==="query"?`<span class="d out">↑ ASK</span>`:`<span class="d in">↓ ANSWER</span>`},
+    {k:"proto", l:"Via", v:r=>r.proto, h:r=>`<span class="sub">${esc(r.proto)}</span>`},
+    {k:"name", l:"Name", v:r=>r.name, h:r=>`<b>${esc(r.name)}</b>`},
+    {k:"type", l:"Type", v:r=>r.type, h:r=>esc(r.type)},
+    {k:"answers", l:"Answer", v:r=>r.answers||r.result, c:"wrap", h:r=>r.kind==="query"?`<span class="sub">→ asked ${esc(r.server)}</span>`:(r.result&&r.result!=="OK"?`<span class="st reset">${esc(r.result)}</span>`:`<span class="mono">${esc(r.answers||"(empty)")}</span>`)},
+  ],
+  packets: [
+    {k:"id", l:"#", n:1, v:r=>r.id, h:r=>`<span class="sub">${r.id}</span>`},
+    {k:"t", l:"Time", v:r=>r.t, h:r=>`<span class="mono sub">${ft(r.t)}</span>`},
+    {k:"dir", l:"Dir", v:r=>r.dir, h:r=>dirB(r.dir)},
+    {k:"app", l:"App", v:r=>r.app, h:r=>r.app?esc(r.app):`<span class="sub">—</span>`},
+    {k:"proto", l:"Protocol", v:r=>topLayer(r), h:r=>esc(topLayer(r))},
+    {k:"src", l:"Source", v:r=>r.src, h:r=>`<span class="mono">${esc(ep(r.src,r.sport))}</span>`},
+    {k:"dst", l:"Destination", v:r=>r.dst, h:r=>`<span class="mono">${esc(ep(r.dst,r.dport))}</span>`},
+    {k:"host", l:"Remote name", v:r=>r.host, h:r=>`<span class="sub">${esc(r.host||"")}</span>`},
+    {k:"len", l:"Bytes", n:1, v:r=>r.len, h:r=>fnum(r.len)},
+    {k:"info", l:"Info", v:r=>r.info, c:"wrap", h:r=>esc(r.info)},
+  ],
+};
+const DEFAULT_SORT = {apps:["rin",-1], conns:["last",-1], hosts:["bin",-1], dns:["t",-1], packets:["id",-1]};
+function topLayer(p){ const L=p.layers||[]; for(let i=L.length-1;i>=0;i--){ if(!["PKTAP","Ethernet","Null/Loopback"].includes(L[i])) return L[i]; } return p.proto; }
+
+function rowText(tab, r){
+  switch(tab){
+    case "apps": return [r.name,(r.pids||[]).join(" ")].join(" ");
+    case "conns": return [r.app,r.eapp,r.proto,r.host,r.owner,r.rip,r.rport,r.lport,r.service,r.state,r.sni,r.tls].join(" ");
+    case "hosts": return [r.name,r.ip,r.owner,(r.apps||[]).join(" "),(r.ports||[]).join(" ")].join(" ");
+    case "dns": return [r.app,r.name,r.type,r.answers,r.result,r.server].join(" ");
+    case "packets": return [r.app,r.eapp,r.proto,(r.layers||[]).join(" "),r.src,r.sport,r.dst,r.dport,r.host,r.info,r.iface].join(" ");
+  }
+  return "";
+}
+
+function dataFor(tab){
+  const s = S.snap; if(!s) return [];
+  let rows = tab==="packets" ? S.packets : (tab==="apps"?s.apps:tab==="conns"?s.conns:tab==="hosts"?s.hosts:s.dns) || [];
+  const q = $("q").value.trim().toLowerCase();
+  const dir = $("dir").value, proto = $("proto").value;
+  const terms = q ? q.split(/\s+/) : [];
+  return rows.filter(r => {
+    if(dir!=="all"){
+      if(tab==="packets" && r.dir!==dir) return false;
+      if(tab==="conns" && !(dir==="in"? r.bin>0 : r.bout>0)) return false;
+      if(tab==="apps" && !(dir==="in"? r.bin>0 : r.bout>0)) return false;
+      if(tab==="hosts" && !(dir==="in"? r.bin>0 : r.bout>0)) return false;
+      if(tab==="dns" && r.kind!==(dir==="in"?"response":"query")) return false;
+    }
+    if(proto!=="all"){
+      if(tab==="packets"){ const L=(r.layers||[]).concat([r.proto]).map(x=>x.toUpperCase()); if(!L.some(x=>x===proto||x.startsWith(proto)||(proto==="DNS"&&x==="MDNS"))) return false; }
+      else if(tab==="conns"){
+        const p=r.proto, svc=(r.service||"").toUpperCase();
+        if(proto==="QUIC" && !svc.includes("QUIC")) return false;
+        else if(proto==="TLS" && !(r.sni||r.tls)) return false;
+        else if(proto==="DNS" && !svc.includes("DNS")) return false;
+        else if(["TCP","UDP","ICMP","ARP"].includes(proto) && !p.startsWith(proto)) return false;
+      }
+    }
+    if(terms.length){ const t=rowText(tab,r).toLowerCase(); if(!terms.every(x=>t.includes(x))) return false; }
+    return true;
+  });
+}
+
+function render(){
+  const tab = S.tab, cols = COLS[tab];
+  const [sk, sd] = S.sort[tab] || DEFAULT_SORT[tab];
+  const col = cols.find(c=>c.k===sk) || cols[0];
+  let rows = dataFor(tab).slice();
+  rows.sort((a,b)=>{ const x=col.v(a), y=col.v(b); return (x>y?1:x<y?-1:0)*sd; });
+  const total = rows.length;
+  rows = rows.slice(0, 600);
+  S.rows = rows;
+  $("thead").innerHTML = "<tr>"+cols.map(c=>`<th class="${c.n?"num":""}" data-k="${c.k}">${esc(c.l)}${c.k===sk?` <span class="arrow">${sd>0?"▲":"▼"}</span>`:""}</th>`).join("")+"</tr>";
+  const selKey = S.sel && S.sel.tab===tab ? S.sel.key : null;
+  $("tbody").innerHTML = rows.map((r,i)=>`<tr data-i="${i}" class="${selKey!==null&&keyOf(tab,r)===selKey?"sel":""}">`+cols.map(c=>`<td class="${c.n?"num":""} ${c.c||""}">${c.h(r)}</td>`).join("")+"</tr>").join("");
+  const em = $("empty");
+  if(!total){ em.style.display="block"; em.textContent = S.snap && (S.snap.capturing||S.packets.length) ? "Nothing matches the current filters." : "Waiting for packets…"; }
+  else if(total>rows.length){ em.style.display="block"; em.textContent=`Showing the first ${rows.length} of ${total}. Narrow it down with the filter box.`; }
+  else em.style.display="none";
+}
+function keyOf(tab,r){ return tab==="apps"?r.name: tab==="conns"?r.id: tab==="hosts"?r.ip: tab==="packets"?r.id: r.t+r.name+r.kind; }
+
+// ---------- stats + chart ----------
+function renderStats(){
+  const s=S.snap; if(!s) return;
+  const last = s.series.length ? s.series[s.series.length-1] : [0,0,0];
+  $("rIn").textContent = fr(last[1]); $("rOut").textContent = fr(last[2]);
+  const avg=(i)=>{ const xs=s.series.slice(-10); return xs.length? xs.reduce((a,b)=>a+b[i],0)/xs.length : 0; };
+  $("rInPk").textContent = "10s avg "+fr(avg(1)); $("rOutPk").textContent = "10s avg "+fr(avg(2));
+  $("tIn").textContent = fb(s.totals.bin); $("pIn").textContent = fnum(s.totals.pin)+" packets";
+  $("tOut").textContent = fb(s.totals.bout); $("pOut").textContent = fnum(s.totals.pout)+" packets";
+  const act = (s.conns||[]).filter(c=>c.state==="open"||c.state==="active"||c.state==="connecting").length;
+  $("active").textContent = act; $("activeSub").textContent = `${fnum(s.counts.conns)} seen · ${(s.apps||[]).length} apps`;
+  $("uptime").textContent = dur(s.now - s.started);
+  $("uptimeSub").textContent = s.pktap ? "app names from kernel" : (s.capturing ? "app names via lsof" : "");
+  $("n-apps").textContent = s.counts.apps||""; $("n-conns").textContent = s.counts.conns||""; $("n-hosts").textContent = s.counts.hosts||"";
+  $("n-dns").textContent = s.counts.dns||""; $("n-packets").textContent = S.packets.length||"";
+  const live = s.capturing && !s.error;
+  $("dot").className = "dot " + (s.error ? "err" : live ? "live" : "");
+  $("statusText").textContent = (S.paused?"paused · ":"") + (s.status||"") + (s.source?` · ${s.source}`:"");
+  $("status").title = `${s.source}\nfilter: ${s.filter||"(none)"}\nthis Mac: ${(s.local_ips||[]).join(", ")}`;
+  const e=$("err"); if(s.error){ e.style.display="block"; e.textContent = s.error; } else e.style.display="none";
+}
+
+const cv = $("chart"), ctx = cv.getContext("2d");
+let chartPts = [];
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function drawChart(){
+  const s=S.snap; const dpr=devicePixelRatio||1;
+  const W=cv.clientWidth, H=cv.clientHeight; if(cv.width!==W*dpr){cv.width=W*dpr;cv.height=H*dpr;}
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  const pad={l:62,r:8,t:22,b:18};
+  const ser = s ? s.series.slice(-180) : [];
+  const now = s ? Math.floor(s.now)-1 : 0;
+  let mx = 1024; for(const p of ser) mx=Math.max(mx,p[1],p[2]);
+  { const unit=Math.pow(1024,Math.floor(Math.log(mx)/Math.log(1024))); const step=[1.5,3,6,15,30,60,150,300,600,1500].find(s=>s*unit>=mx)||1500; mx=step*unit; }
+  const x = t => pad.l + (W-pad.l-pad.r) * (1 - (now - t)/179);
+  const y = v => pad.t + (H-pad.t-pad.b) * (1 - v/mx);
+  ctx.font="11px -apple-system,sans-serif"; ctx.fillStyle=css("--muted"); ctx.strokeStyle=css("--border"); ctx.lineWidth=1;
+  for(let i=0;i<=3;i++){ const v=mx*i/3, yy=Math.round(y(v))+.5; ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(W-pad.r,yy); ctx.stroke(); ctx.textAlign="right"; ctx.textBaseline="middle"; ctx.fillText(fr(v),pad.l-6,yy); }
+  ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  [["3m",179],["2m",120],["1m",60],["now",0]].forEach(([l,o])=>ctx.fillText(l, Math.min(W-pad.r-12, Math.max(pad.l+8, x(now-o))), H-4));
+  chartPts = ser.map(p=>({t:p[0], i:p[1], o:p[2], x:x(p[0])}));
+  for(const [idx,color,soft] of [[1,"--in","--in-soft"],[2,"--out","--out-soft"]]){
+    const pts = ser.filter(p=>now-p[0]<=179);
+    if(!pts.length) continue;
+    ctx.beginPath(); pts.forEach((p,j)=>{ const xx=x(p[0]), yy=y(p[idx]); j?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy); });
+    ctx.strokeStyle=css(color); ctx.lineWidth=1.6; ctx.lineJoin="round"; ctx.stroke();
+    ctx.lineTo(x(pts[pts.length-1][0]), y(0)); ctx.lineTo(x(pts[0][0]), y(0)); ctx.closePath(); ctx.fillStyle=css(soft); ctx.fill();
+  }
+  if(hoverX!==null && chartPts.length){
+    let best=chartPts[0]; for(const p of chartPts) if(Math.abs(p.x-hoverX)<Math.abs(best.x-hoverX)) best=p;
+    ctx.strokeStyle=css("--muted"); ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(best.x+.5,pad.t); ctx.lineTo(best.x+.5,H-pad.b); ctx.stroke(); ctx.setLineDash([]);
+    const tip=$("tip"); tip.style.display="block";
+    tip.innerHTML = `${new Date(best.t*1000).toLocaleTimeString([], {hour12:false})}<br><span class="cin">↓ ${fr(best.i)}</span> &nbsp; <span class="cout">↑ ${fr(best.o)}</span>`;
+    const left = best.x + 14 + tip.offsetWidth > W ? best.x - tip.offsetWidth - 4 : best.x + 14;
+    tip.style.left = left+"px"; tip.style.top = "26px";
+  } else $("tip").style.display="none";
+}
+let hoverX=null;
+cv.addEventListener("mousemove", e=>{ hoverX = e.offsetX; drawChart(); });
+cv.addEventListener("mouseleave", ()=>{ hoverX=null; drawChart(); });
+addEventListener("resize", drawChart);
+
+// ---------- detail panel ----------
+function kv(pairs){ return `<div class="kv">${pairs.filter(p=>p[1]!==undefined&&p[1]!==null&&p[1]!=="").map(([k,v])=>`<div class="k">${esc(k)}</div><div class="v">${v}</div>`).join("")}</div>`; }
+function openDetail(html){ const d=$("detail"); d.innerHTML = html; d.classList.add("open"); d.querySelector(".x")?.addEventListener("click", closeDetail); }
+function closeDetail(){ $("detail").classList.remove("open"); S.sel=null; render(); }
+
+async function showPacket(r){
+  let p = r;
+  try { const res = await fetch("/api/packet?id="+r.id); if(res.ok) p = await res.json(); } catch(e){}
+  const base = [
+    ["Packet #", p.id], ["Time", esc(ft(p.t))], ["Direction", dirB(p.dir)], ["Interface", esc(p.iface)],
+    ["App", esc(p.app||"—")+(p.pid?` <span class="sub">pid ${p.pid}</span>`:"")], ["Protocol stack", esc((p.layers||[]).join(" › "))],
+    ["Source", esc(ep(p.src,p.sport))], ["Destination", esc(ep(p.dst,p.dport))], ["Size on wire", fnum(p.len)+" bytes"], ["Summary", esc(p.info)],
+  ];
+  const extra = (p.fields||[]).map(([k,v])=>[k, esc(v)]);
+  openDetail(`<h3>${dirB(p.dir)} ${esc(topLayer(p))} packet <button class="x" title="Close">✕</button></h3>
+    <div class="sub">${esc(p.host||"")}</div>
+    ${kv(base)}
+    ${extra.length?`<div class="section">Decoded fields</div>${kv(extra)}`:""}
+    ${p.hex?`<div class="section">Payload (first ${Math.min(256,(p.hex.match(/\n/g)||[]).length*16)} bytes)</div><pre class="hex">${esc(p.hex)}</pre>`:(r.fields?"":"")}
+    <div class="note">${p.hex?"Encrypted payloads look like random bytes — that's expected.":""}</div>`);
+}
+function showConn(c){
+  openDetail(`<h3>${esc(c.proto)} connection <button class="x" title="Close">✕</button></h3>
+    <div class="sub">${esc(c.app)} ⇄ ${esc(c.host||c.rip)}</div>
+    ${kv([
+      ["App", esc(c.app)+(c.pid?` <span class="sub">pid ${c.pid}</span>`:"")], ["On behalf of", esc(c.eapp||"")],
+      ["Local end", esc(ep(c.lip,c.lport))], ["Remote end", esc(ep(c.rip,c.rport))],
+      ["Remote name", esc(c.host||"")], ["Owner (approx.)", esc(c.owner||"")], ["Service", esc(c.service||"")],
+      ["TLS server name", esc(c.sni||"")], ["ALPN", esc(c.alpn||"")], ["TLS version", esc(c.tls||"")],
+      ["Started by", esc(c.initiator||"(already open when capture started)")], ["State", `<span class="st ${c.state}">${c.state}</span>`],
+      ["Received", `${fb(c.bin)} in ${fnum(c.pin)} packets`], ["Sent", `${fb(c.bout)} in ${fnum(c.pout)} packets`],
+      ["First seen", esc(ft(c.first))], ["Last seen", esc(ft(c.last))+` <span class="sub">${ago(c.last)}</span>`], ["Interface", esc(c.iface)],
+    ])}
+    <span class="link" id="toPk">Show this connection's packets →</span>`);
+  $("toPk").onclick = ()=>{ setTab("packets"); $("q").value = `${c.rip} ${c.lport}`; render(); };
+}
+function showHost(h){
+  openDetail(`<h3>${esc(h.name||h.ip)} <button class="x" title="Close">✕</button></h3>
+    ${kv([["IP", esc(h.ip)], ["Name", esc(h.name||"(not seen in DNS/TLS)")], ["Owner (approx.)", esc(h.owner||"unknown")],
+      ["Apps talking to it", esc((h.apps||[]).join(", "))], ["Remote ports", esc((h.ports||[]).join(", "))],
+      ["Received from it", fb(h.bin)], ["Sent to it", fb(h.bout)], ["Connections", h.conns], ["First seen", esc(ft(h.first))], ["Last seen", esc(ago(h.last))]])}
+    <span class="link" id="toC">Show connections to this host →</span>`);
+  $("toC").onclick = ()=>{ setTab("conns"); $("q").value = h.ip; render(); };
+}
+function showDNS(d){
+  openDetail(`<h3>DNS ${esc(d.kind)} <button class="x" title="Close">✕</button></h3>
+    ${kv([["Time", esc(ft(d.t))], ["App", esc(d.app)], ["Protocol", esc(d.proto)], ["Name", esc(d.name)], ["Record type", esc(d.type)],
+      [d.kind==="query"?"Asked server":"Answered by", esc(d.server)], ["Result", esc(d.result||"")], ["Answers", esc(d.answers||"")]])}`);
+}
+
+// ---------- events ----------
+function setTab(t){ S.tab=t; S.sel=null; $("detail").classList.remove("open"); document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on", b.dataset.tab===t)); render(); }
+$("tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(b){ $("q").value=""; setTab(b.dataset.tab); } });
+$("thead").addEventListener("click", e=>{ const th=e.target.closest("th"); if(!th) return; const k=th.dataset.k; const cur=S.sort[S.tab]||DEFAULT_SORT[S.tab]; S.sort[S.tab] = [k, cur[0]===k ? -cur[1] : (COLS[S.tab].find(c=>c.k===k).n?-1:1)]; render(); });
+$("tbody").addEventListener("click", e=>{
+  const tr=e.target.closest("tr"); if(!tr) return; const r=S.rows[+tr.dataset.i]; if(!r) return;
+  S.sel={tab:S.tab, key:keyOf(S.tab,r)}; render();
+  if(S.tab==="packets") showPacket(r); else if(S.tab==="conns") showConn(r); else if(S.tab==="hosts") showHost(r); else if(S.tab==="dns") showDNS(r);
+  else if(S.tab==="apps"){ setTab("conns"); $("q").value = r.name; render(); }
+});
+let qt; $("q").addEventListener("input", ()=>{ clearTimeout(qt); qt=setTimeout(render,120); });
+$("dir").addEventListener("change", render); $("proto").addEventListener("change", render);
+$("pauseBtn").addEventListener("click", ()=>{ S.paused=!S.paused; $("pauseBtn").classList.toggle("on",S.paused); $("pauseBtn").textContent=S.paused?"Resume":"Pause"; if(!S.paused) poll(); else renderStats(); });
+$("clearBtn").addEventListener("click", async ()=>{ await fetch("/api/reset",{method:"POST"}); S.packets=[]; S.lastId=0; S.sel=null; $("detail").classList.remove("open"); poll(); });
+addEventListener("keydown", e=>{ if(e.key==="Escape") closeDetail(); if(e.key==="/" && document.activeElement!==$("q")){ e.preventDefault(); $("q").focus(); } });
+
+// ---------- polling ----------
+let busy=false, failures=0;
+async function poll(){
+  if(busy) return; busy=true;
+  try{
+    const res = await fetch("/api/state?since="+S.lastId);
+    const s = await res.json(); failures=0;
+    if(s.last_id < S.lastId){ S.packets=[]; }
+    if(s.packets && s.packets.length){ S.packets = S.packets.concat(s.packets); if(S.packets.length>MAXP) S.packets = S.packets.slice(-MAXP); }
+    S.lastId = s.last_id; S.snap = s;
+    renderStats(); drawChart();
+    if(!S.paused) render();
+  }catch(e){
+    failures++;
+    if(failures>2){ $("dot").className="dot err"; $("statusText").textContent="Netwatch isn't running (start it in Terminal)"; }
+  }finally{ busy=false; }
+}
+setInterval(()=>{ if(!S.paused) poll(); }, 1000);
+poll();
+</script>
+</body>
+</html>

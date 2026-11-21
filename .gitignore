@@ -1,0 +1,5 @@
+netwatch
+netwatch.new
+.DS_Store
+*.pcap
+*.pcapng
