@@ -20,30 +20,31 @@ const (
 )
 
 type Conn struct {
-	ID        int64   `json:"id"`
-	Proto     string  `json:"proto"`
-	App       string  `json:"app"`
-	PID       int     `json:"pid"`
-	EApp      string  `json:"eapp,omitempty"`
-	LIP       string  `json:"lip"`
-	LPort     int     `json:"lport"`
-	RIP       string  `json:"rip"`
-	RPort     int     `json:"rport"`
-	Service   string  `json:"service"`
-	Host      string  `json:"host"`
-	Owner     string  `json:"owner"`
-	BytesIn   int64   `json:"bin"`
-	BytesOut  int64   `json:"bout"`
-	PktsIn    int64   `json:"pin"`
-	PktsOut   int64   `json:"pout"`
-	First     float64 `json:"first"`
-	Last      float64 `json:"last"`
-	State     string  `json:"state"`
-	SNI       string  `json:"sni,omitempty"`
-	ALPN      string  `json:"alpn,omitempty"`
-	TLSVer    string  `json:"tls,omitempty"`
-	Iface     string  `json:"iface"`
-	Initiator string  `json:"initiator,omitempty"` // "this Mac" or "remote"
+	ID        int64    `json:"id"`
+	Proto     string   `json:"proto"`
+	App       string   `json:"app"`
+	PID       int      `json:"pid"`
+	EApp      string   `json:"eapp,omitempty"`
+	LIP       string   `json:"lip"`
+	LPort     int      `json:"lport"`
+	RIP       string   `json:"rip"`
+	RPort     int      `json:"rport"`
+	Service   string   `json:"service"`
+	Host      string   `json:"host"`
+	Owner     string   `json:"owner"`
+	BytesIn   int64    `json:"bin"`
+	BytesOut  int64    `json:"bout"`
+	PktsIn    int64    `json:"pin"`
+	PktsOut   int64    `json:"pout"`
+	First     float64  `json:"first"`
+	Last      float64  `json:"last"`
+	State     string   `json:"state"`
+	SNI       string   `json:"sni,omitempty"`
+	ALPN      string   `json:"alpn,omitempty"`
+	TLSVer    string   `json:"tls,omitempty"`
+	Iface     string   `json:"iface"`
+	Initiator string   `json:"initiator,omitempty"` // "this Mac" or "remote"
+	Flags     []string `json:"flags,omitempty"`
 
 	quic             bool
 	syn, fin, rst    bool
@@ -53,18 +54,21 @@ type Conn struct {
 }
 
 type AppStat struct {
-	Name     string  `json:"name"`
-	PIDs     []int   `json:"pids"`
-	BytesIn  int64   `json:"bin"`
-	BytesOut int64   `json:"bout"`
-	PktsIn   int64   `json:"pin"`
-	PktsOut  int64   `json:"pout"`
-	RateIn   float64 `json:"rin"`
-	RateOut  float64 `json:"rout"`
-	Active   int     `json:"active"`
-	Conns    int     `json:"conns"`
-	Hosts    int     `json:"hosts"`
-	Last     float64 `json:"last"`
+	Name     string   `json:"name"`
+	PIDs     []int    `json:"pids"`
+	BytesIn  int64    `json:"bin"`
+	BytesOut int64    `json:"bout"`
+	PktsIn   int64    `json:"pin"`
+	PktsOut  int64    `json:"pout"`
+	RateIn   float64  `json:"rin"`
+	RateOut  float64  `json:"rout"`
+	Active   int      `json:"active"`
+	Conns    int      `json:"conns"`
+	Hosts    int      `json:"hosts"`
+	Last     float64  `json:"last"`
+	Path     string   `json:"path,omitempty"`
+	Signer   string   `json:"signer,omitempty"`
+	Flags    []string `json:"flags,omitempty"`
 
 	pids  map[int]bool
 	hosts map[string]bool
@@ -125,6 +129,10 @@ type State struct {
 	bin     [3]float64
 	started time.Time
 
+	beacons    map[string]*beacon
+	dnsServers map[string]*dnsSrv
+	nxRandom   []nxName
+
 	Status    string
 	Error     string
 	Capturing bool
@@ -156,6 +164,7 @@ func (s *State) reset() {
 		s.ipNames = map[string]string{}
 	}
 	s.totals = Totals{}
+	s.beacons, s.dnsServers, s.nxRandom = nil, nil, nil
 	s.series = nil
 	s.bin = [3]float64{float64(time.Now().Unix()), 0, 0}
 	s.started = time.Now()
@@ -303,6 +312,8 @@ func (s *State) ingest(p *Packet) {
 			s.dns = s.dns[len(s.dns)-1500:]
 		}
 	}
+
+	s.track(p, app, rip)
 
 	var c *Conn
 	if p.l4ok && rip != "" {
@@ -572,6 +583,7 @@ type Snapshot struct {
 	LocalIPs  []string       `json:"local_ips"`
 	Counts    map[string]int `json:"counts"`
 	Formats   map[string]int `json:"formats,omitempty"`
+	Findings  []Finding      `json:"findings"`
 }
 
 func (s *State) snapshot(since int64) Snapshot {
@@ -598,6 +610,9 @@ func (s *State) snapshot(since int64) Snapshot {
 		snap.Packets = append(snap.Packets, p)
 	}
 
+	findings, connFlags, appFlags := s.findings(now)
+	snap.Findings = findings
+
 	active := map[string]int{}
 	total := map[string]int{}
 	for _, c := range s.conns {
@@ -614,6 +629,7 @@ func (s *State) snapshot(since int64) Snapshot {
 		}
 		sort.Ints(x.PIDs)
 		x.Active, x.Conns, x.Hosts = active[a.Name], total[a.Name], len(a.hosts)
+		x.Flags = appFlags[a.Name]
 		x.hist = nil
 		snap.Apps = append(snap.Apps, x)
 	}
@@ -628,6 +644,7 @@ func (s *State) snapshot(since int64) Snapshot {
 	for _, c := range s.conns {
 		x := *c
 		x.State = connState(c, now)
+		x.Flags = connFlags[c.ID]
 		if x.Host == "" {
 			if x.SNI != "" {
 				x.Host = x.SNI

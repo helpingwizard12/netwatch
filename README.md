@@ -16,6 +16,28 @@ sent anywhere.
 - **DNS lookups** – every name looked up and the IPs returned
 - **Packets** – time, direction, app, protocol, source/destination, size, summary;
   click one for every decoded field and a hex dump
+- **Worth a look** – rule-based hints about traffic worth a second glance, each with
+  why it was flagged, why it might be fine, and what to check (mark items OK to hide them)
+
+## Worth a look rules
+
+| Level | Rule |
+|---|---|
+| high | App with a macOS system name (e.g. `mDNSResponder`) not signed by Apple |
+| high | Unsigned app running from a temp folder, Downloads, disk image or Trash |
+| medium | App running from one of those locations |
+| medium | Incoming connection from an internet address |
+| medium | Port commonly used by remote-access tools, proxies, Tor, IRC or miners (4444, 9001, 6667…) |
+| medium | App uploading > 20 MB and more than twice what it downloads |
+| medium | Very long DNS names (data can be smuggled inside them) |
+| medium | Several failed lookups for random-looking names (malware searching for its server) |
+| low | App not signed by an identified developer (normal for Homebrew / self-built tools) |
+| low | Unusual TCP port on a public address |
+| low | Connection to an IP with no DNS/TLS name, outside known providers |
+| low | Clockwork-regular check-ins to the same host |
+| low | Plain DNS sent to a server other than your router or a well-known resolver |
+
+These are hints, not proof — every finding explains how it could be harmless.
 
 Decoded where the protocol is unencrypted: DNS/mDNS, TLS server name (SNI), ALPN,
 TLS version/cipher, QUIC headers, plain HTTP, DHCP, NTP, SSDP, ARP, ICMP/ICMPv6.
@@ -57,5 +79,6 @@ http://127.0.0.1:8765. Ctrl+C stops it.
 | `decode.go` | PKTAP, Ethernet, IPv4/6, TCP/UDP/ICMP/ARP, DNS, TLS, QUIC, HTTP, DHCP… |
 | `state.go` | connections, apps, hosts, DNS log, traffic series |
 | `lookup.go` | port names and approximate IP-range owners (offline) |
-| `sysinfo.go` | this Mac's addresses, full process names, `lsof` fallback |
+| `sysinfo.go` | this Mac's addresses, full process names + paths, code signatures, `lsof` fallback |
+| `detect.go` | "Worth a look" rules |
 | `web/index.html` | the interface (embedded into the binary) |

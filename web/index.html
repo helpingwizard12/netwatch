@@ -45,7 +45,8 @@ header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:
 canvas{width:100%;height:150px;display:block}
 .tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11.5px;display:none;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .bar{display:flex;align-items:center;gap:8px;padding:12px 16px 8px;flex-wrap:wrap}
-.tabs{display:flex;gap:2px;background:var(--panel2);padding:3px;border-radius:9px}
+.tabs{display:flex;gap:2px;background:var(--panel2);padding:3px;border-radius:9px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.tab{white-space:nowrap;flex:none}
 .tab{border:0;background:transparent;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--muted)}
 .tab.on{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .tab .n{font-size:11px;color:var(--muted);margin-left:4px;font-variant-numeric:tabular-nums}
@@ -72,6 +73,19 @@ tr.sel td{background:var(--sel)!important}
 .cin{color:var(--in)} .cout{color:var(--out)}
 .st{font-size:11.5px}
 .st.open,.st.active{color:var(--ok)} .st.connecting{color:var(--warn)} .st.reset{color:var(--bad)} .st.closed,.st.idle{color:var(--muted)}
+.sev{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.sev::before{content:"";width:9px;height:9px;border-radius:50%;background:currentColor}
+.sev.high{color:var(--bad)} .sev.medium{color:var(--warn)} .sev.low{color:var(--in)}
+.flag{font-size:12px;margin-right:4px;cursor:help}
+.flag.high{color:var(--bad)} .flag.medium{color:var(--warn)} .flag.low{color:var(--in)}
+.tab .n.high{color:#fff;background:var(--bad);border-radius:99px;padding:0 6px}
+.tab .n.medium{color:#111;background:var(--warn);border-radius:99px;padding:0 6px}
+.tab .n.low{color:#fff;background:var(--in);border-radius:99px;padding:0 6px}
+.okbtn{border:1px solid var(--border);background:var(--panel);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:11.5px;color:var(--muted)}
+.okbtn:hover{color:var(--text);background:var(--panel2)}
+.why{margin:10px 0;padding:8px 10px;border-radius:8px;background:var(--panel2)}
+.why b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px}
+#okToggle{display:none;color:var(--muted);font-size:12px;align-items:center;gap:5px}
 .empty{padding:40px;text-align:center;color:var(--muted)}
 aside{width:420px;flex:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:auto;display:none;padding:12px 14px}
 aside.open{display:block}
@@ -128,6 +142,7 @@ details.help li{margin:2px 0}
 <div class="bar">
   <div class="tabs" id="tabs">
     <button class="tab on" data-tab="apps">Apps<span class="n" id="n-apps"></span></button>
+    <button class="tab" data-tab="flags" title="Rule-based hints about traffic worth a second glance">Worth a look<span class="n" id="n-flags"></span></button>
     <button class="tab" data-tab="conns">Connections<span class="n" id="n-conns"></span></button>
     <button class="tab" data-tab="hosts">Remote hosts<span class="n" id="n-hosts"></span></button>
     <button class="tab" data-tab="dns">DNS lookups<span class="n" id="n-dns"></span></button>
@@ -140,6 +155,7 @@ details.help li{margin:2px 0}
   <select id="proto" title="Protocol">
     <option value="all">All protocols</option><option>TCP</option><option>UDP</option><option>QUIC</option><option>TLS</option><option>DNS</option><option>ICMP</option><option>ARP</option>
   </select>
+  <label id="okToggle"><input type="checkbox" id="showOk"> show items marked OK <span id="okCount"></span></label>
 </div>
 
 <div class="main">
@@ -171,6 +187,13 @@ details.help li{margin:2px 0}
         <li>DHCP (your IP, router, DNS servers), NTP, SSDP/UPnP device announcements</li>
         <li>Grouped: connections (bytes each way, state, who initiated), apps (live rate), remote hosts with approximate owner (Google, Cloudflare, Apple…)</li>
       </ul>
+      <b>Worth a look (rule-based hints, not proof)</b>
+      <ul>
+        <li>App with a macOS system name not signed by Apple; unsigned or odd-location apps (temp, Downloads, disk images)</li>
+        <li>Incoming connections from the internet; ports used by remote-access/proxy tools; unusual ports</li>
+        <li>Connections to unnamed IPs outside known providers; apps uploading far more than they download</li>
+        <li>Clockwork-regular check-ins; DNS to unusual servers, very long names, failed random-looking names</li>
+      </ul>
       <b>Not visible</b>
       <ul>
         <li>Contents of HTTPS / QUIC / VPN traffic — it is encrypted end to end</li>
@@ -200,7 +223,8 @@ const dirB = d => `<span class="d ${d}">${d==="in"?"↓ IN":d==="out"?"↑ OUT":
 // ---------- table definitions ----------
 const COLS = {
   apps: [
-    {k:"name", l:"App", v:r=>r.name, h:r=>`<b>${esc(r.name)}</b>`},
+    {k:"name", l:"App", v:r=>r.name, h:r=>flagIcon(r.flags)+`<b title="${esc(r.path||"")}">${esc(r.name)}</b>`},
+    {k:"signer", l:"Signed by", v:r=>r.signer||"", h:r=>r.signer?`<span class="${/ad-hoc|not signed/.test(r.signer)?"st connecting":"sub"}">${esc(r.signer)}</span>`:`<span class="sub">–</span>`},
     {k:"pids", l:"PID(s)", v:r=>r.pids?.[0]||0, h:r=>`<span class="sub mono">${esc((r.pids||[]).slice(0,4).join(", "))}${(r.pids||[]).length>4?"…":""}</span>`},
     {k:"rin", l:"↓ Now", n:1, v:r=>r.rin, h:r=>r.rin>0?`<span class="cin">${fr(r.rin)}</span>`:`<span class="sub">–</span>`},
     {k:"rout", l:"↑ Now", n:1, v:r=>r.rout, h:r=>r.rout>0?`<span class="cout">${fr(r.rout)}</span>`:`<span class="sub">–</span>`},
@@ -212,7 +236,7 @@ const COLS = {
     {k:"last", l:"Last seen", n:1, v:r=>r.last, h:r=>`<span class="sub">${ago(r.last)}</span>`},
   ],
   conns: [
-    {k:"app", l:"App", v:r=>r.app, h:r=>esc(r.app)+(r.eapp?` <span class="sub">for ${esc(r.eapp)}</span>`:"")},
+    {k:"app", l:"App", v:r=>r.app, h:r=>flagIcon(r.flags,"medium")+esc(r.app)+(r.eapp?` <span class="sub">for ${esc(r.eapp)}</span>`:"")},
     {k:"proto", l:"Proto", v:r=>r.proto, h:r=>esc(r.proto)},
     {k:"host", l:"Remote host", v:r=>r.host||r.owner||r.rip, h:r=>`${esc(r.host||"—")}<div class="sub">${esc(r.owner||"")}</div>`},
     {k:"rip", l:"Remote address", v:r=>r.rip, h:r=>`<span class="mono">${esc(ep(r.rip,r.rport))}</span>`, c:"mono"},
@@ -234,6 +258,14 @@ const COLS = {
     {k:"ports", l:"Ports", v:r=>(r.ports||[])[0]||0, h:r=>`<span class="mono sub">${esc((r.ports||[]).slice(0,6).join(", "))}</span>`},
     {k:"conns", l:"Conns", n:1, v:r=>r.conns, h:r=>r.conns},
     {k:"last", l:"Last seen", n:1, v:r=>r.last, h:r=>`<span class="sub">${ago(r.last)}</span>`},
+  ],
+  flags: [
+    {k:"sev", l:"Level", v:r=>({high:3,medium:2,low:1})[r.sev], h:r=>`<span class="sev ${r.sev}">${r.sev}</span>`},
+    {k:"title", l:"What", v:r=>r.title, c:"wrap", h:r=>`<b>${esc(r.title)}</b><div class="sub">${esc(r.rule)}</div>`},
+    {k:"app", l:"App", v:r=>r.app, h:r=>esc(r.app||"—")},
+    {k:"count", l:"Times", n:1, v:r=>r.count, h:r=>r.count},
+    {k:"last", l:"Last seen", n:1, v:r=>r.last, h:r=>`<span class="sub">${ago(r.last)}</span>`},
+    {k:"ok", l:"", v:r=>0, h:r=>`<button class="okbtn" data-ok="${esc(r.key)}">${isOk(r.key)?"Undo OK":"Mark OK"}</button>`},
   ],
   dns: [
     {k:"t", l:"Time", v:r=>r.t, h:r=>`<span class="mono sub">${ft(r.t)}</span>`},
@@ -257,7 +289,17 @@ const COLS = {
     {k:"info", l:"Info", v:r=>r.info, c:"wrap", h:r=>esc(r.info)},
   ],
 };
-const DEFAULT_SORT = {apps:["rin",-1], conns:["last",-1], hosts:["bin",-1], dns:["t",-1], packets:["id",-1]};
+const DEFAULT_SORT = {flags:["sev",-1], apps:["rin",-1], conns:["last",-1], hosts:["bin",-1], dns:["t",-1], packets:["id",-1]};
+function flagIcon(flags, defSev){
+  if(!flags||!flags.length) return "";
+  let sev="low", reasons=[];
+  for(const f of flags){ const [sv,...rest]=f.includes(":")?f.split(":"):[defSev||"low",f]; reasons.push(rest.join(":")); if(({high:3,medium:2,low:1})[sv]>({high:3,medium:2,low:1})[sev]) sev=sv; }
+  return `<span class="flag ${sev}" title="Worth a look: ${esc([...new Set(reasons)].join(", "))}">⚑</span>`;
+}
+const OK_KEY="netwatch.ok";
+let okSet = new Set(); try{ okSet = new Set(JSON.parse(localStorage.getItem(OK_KEY)||"[]")); }catch(e){}
+const isOk = k => okSet.has(k);
+function toggleOk(k){ okSet.has(k)?okSet.delete(k):okSet.add(k); try{ localStorage.setItem(OK_KEY, JSON.stringify([...okSet])); }catch(e){} renderStats(); render(); }
 function topLayer(p){ const L=p.layers||[]; for(let i=L.length-1;i>=0;i--){ if(!["PKTAP","Ethernet","Null/Loopback"].includes(L[i])) return L[i]; } return p.proto; }
 
 function rowText(tab, r){
@@ -266,6 +308,7 @@ function rowText(tab, r){
     case "conns": return [r.app,r.eapp,r.proto,r.host,r.owner,r.rip,r.rport,r.lport,r.service,r.state,r.sni,r.tls].join(" ");
     case "hosts": return [r.name,r.ip,r.owner,(r.apps||[]).join(" "),(r.ports||[]).join(" ")].join(" ");
     case "dns": return [r.app,r.name,r.type,r.answers,r.result,r.server].join(" ");
+    case "flags": return [r.sev,r.rule,r.title,r.detail,r.app,r.target,r.ip].join(" ");
     case "packets": return [r.app,r.eapp,r.proto,(r.layers||[]).join(" "),r.src,r.sport,r.dst,r.dport,r.host,r.info,r.iface].join(" ");
   }
   return "";
@@ -273,7 +316,8 @@ function rowText(tab, r){
 
 function dataFor(tab){
   const s = S.snap; if(!s) return [];
-  let rows = tab==="packets" ? S.packets : (tab==="apps"?s.apps:tab==="conns"?s.conns:tab==="hosts"?s.hosts:s.dns) || [];
+  let rows = tab==="packets" ? S.packets : (tab==="apps"?s.apps:tab==="conns"?s.conns:tab==="hosts"?s.hosts:tab==="flags"?s.findings:s.dns) || [];
+  if(tab==="flags" && !$("showOk").checked) rows = rows.filter(r=>!isOk(r.key));
   const q = $("q").value.trim().toLowerCase();
   const dir = $("dir").value, proto = $("proto").value;
   const terms = q ? q.split(/\s+/) : [];
@@ -284,6 +328,7 @@ function dataFor(tab){
       if(tab==="apps" && !(dir==="in"? r.bin>0 : r.bout>0)) return false;
       if(tab==="hosts" && !(dir==="in"? r.bin>0 : r.bout>0)) return false;
       if(tab==="dns" && r.kind!==(dir==="in"?"response":"query")) return false;
+      if(tab==="flags" && r.rule!=="Incoming connection from the internet" && dir==="in") return false;
     }
     if(proto!=="all"){
       if(tab==="packets"){ const L=(r.layers||[]).concat([r.proto]).map(x=>x.toUpperCase()); if(!L.some(x=>x===proto||x.startsWith(proto)||(proto==="DNS"&&x==="MDNS"))) return false; }
@@ -313,11 +358,11 @@ function render(){
   const selKey = S.sel && S.sel.tab===tab ? S.sel.key : null;
   $("tbody").innerHTML = rows.map((r,i)=>`<tr data-i="${i}" class="${selKey!==null&&keyOf(tab,r)===selKey?"sel":""}">`+cols.map(c=>`<td class="${c.n?"num":""} ${c.c||""}">${c.h(r)}</td>`).join("")+"</tr>").join("");
   const em = $("empty");
-  if(!total){ em.style.display="block"; em.textContent = S.snap && (S.snap.capturing||S.packets.length) ? "Nothing matches the current filters." : "Waiting for packets…"; }
+  if(!total){ em.style.display="block"; em.textContent = tab==="flags" && !$("q").value ? "Nothing worth a look right now. Findings appear here as traffic matches a rule." : S.snap && (S.snap.capturing||S.packets.length) ? "Nothing matches the current filters." : "Waiting for packets…"; }
   else if(total>rows.length){ em.style.display="block"; em.textContent=`Showing the first ${rows.length} of ${total}. Narrow it down with the filter box.`; }
   else em.style.display="none";
 }
-function keyOf(tab,r){ return tab==="apps"?r.name: tab==="conns"?r.id: tab==="hosts"?r.ip: tab==="packets"?r.id: r.t+r.name+r.kind; }
+function keyOf(tab,r){ return tab==="flags"?r.key: tab==="apps"?r.name: tab==="conns"?r.id: tab==="hosts"?r.ip: tab==="packets"?r.id: r.t+r.name+r.kind; }
 
 // ---------- stats + chart ----------
 function renderStats(){
@@ -333,7 +378,10 @@ function renderStats(){
   $("uptime").textContent = dur(s.now - s.started);
   $("uptimeSub").textContent = s.pktap ? "app names from kernel" : (s.capturing ? "app names via lsof" : "");
   $("n-apps").textContent = s.counts.apps||""; $("n-conns").textContent = s.counts.conns||""; $("n-hosts").textContent = s.counts.hosts||"";
-  $("n-dns").textContent = s.counts.dns||""; $("n-packets").textContent = S.packets.length||"";
+  $("n-dns").textContent = s.counts.dns||"";
+  { const open=(s.findings||[]).filter(f=>!isOk(f.key)); const top=open.reduce((m,f)=>({high:3,medium:2,low:1})[f.sev]>({high:3,medium:2,low:1})[m]?f.sev:m,"low");
+    const n=$("n-flags"); n.textContent = open.length||""; n.className = "n" + (open.length? " "+top : "");
+    const okN=(s.findings||[]).length-open.length; $("okCount").textContent = okN?`(${okN})`:""; } $("n-packets").textContent = S.packets.length||"";
   const live = s.capturing && !s.error;
   $("dot").className = "dot " + (s.error ? "err" : live ? "live" : "");
   $("statusText").textContent = (S.paused?"paused · ":"") + (s.status||"") + (s.source?` · ${s.source}`:"");
@@ -425,6 +473,20 @@ function showHost(h){
     <span class="link" id="toC">Show connections to this host →</span>`);
   $("toC").onclick = ()=>{ setTab("conns"); $("q").value = h.ip; render(); };
 }
+function showFinding(f){
+  openDetail(`<h3><span class="sev ${f.sev}">${f.sev}</span> ${esc(f.rule)} <button class="x" title="Close">✕</button></h3>
+    <div style="margin:8px 0 4px;font-weight:600">${esc(f.title)}</div>
+    <div class="sub" style="word-break:break-all">${esc(f.detail)}</div>
+    <div class="why"><b>Why it might be fine</b>${esc(f.benign)}</div>
+    <div class="why"><b>What to check</b>${esc(f.check)}</div>
+    ${kv([["App", esc(f.app||"")], ["Target", esc(f.target||"")], ["Times seen", f.count], ["First seen", esc(ft(f.first))], ["Last seen", esc(ft(f.last))+` <span class="sub">${ago(f.last)}</span>`]])}
+    ${f.ip?`<span class="link" id="toFc">Show connections to ${esc(f.ip)} →</span>`:f.app&&f.app.indexOf(",")<0?`<span class="link" id="toFa">Show connections of ${esc(f.app)} →</span>`:""}
+    <div style="margin-top:12px"><button class="okbtn" id="fOk">${isOk(f.key)?"Undo OK":"Mark as OK"}</button></div>
+    <div class="note">These are rule-based hints, not proof. Marking OK hides it in this browser only.</div>`);
+  if($("toFc")) $("toFc").onclick = ()=>{ setTab("conns"); $("q").value = f.ip; render(); };
+  if($("toFa")) $("toFa").onclick = ()=>{ setTab("conns"); $("q").value = f.app; render(); };
+  $("fOk").onclick = ()=>{ toggleOk(f.key); showFinding(f); };
+}
 function showDNS(d){
   openDetail(`<h3>DNS ${esc(d.kind)} <button class="x" title="Close">✕</button></h3>
     ${kv([["Time", esc(ft(d.t))], ["App", esc(d.app)], ["Protocol", esc(d.proto)], ["Name", esc(d.name)], ["Record type", esc(d.type)],
@@ -432,17 +494,18 @@ function showDNS(d){
 }
 
 // ---------- events ----------
-function setTab(t){ S.tab=t; S.sel=null; $("detail").classList.remove("open"); document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on", b.dataset.tab===t)); render(); }
+function setTab(t){ S.tab=t; $("okToggle").style.display = t==="flags"?"inline-flex":"none"; S.sel=null; $("detail").classList.remove("open"); document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on", b.dataset.tab===t)); render(); }
 $("tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(b){ $("q").value=""; setTab(b.dataset.tab); } });
 $("thead").addEventListener("click", e=>{ const th=e.target.closest("th"); if(!th) return; const k=th.dataset.k; const cur=S.sort[S.tab]||DEFAULT_SORT[S.tab]; S.sort[S.tab] = [k, cur[0]===k ? -cur[1] : (COLS[S.tab].find(c=>c.k===k).n?-1:1)]; render(); });
 $("tbody").addEventListener("click", e=>{
+  const okb=e.target.closest("[data-ok]"); if(okb){ e.stopPropagation(); toggleOk(okb.dataset.ok); return; }
   const tr=e.target.closest("tr"); if(!tr) return; const r=S.rows[+tr.dataset.i]; if(!r) return;
   S.sel={tab:S.tab, key:keyOf(S.tab,r)}; render();
-  if(S.tab==="packets") showPacket(r); else if(S.tab==="conns") showConn(r); else if(S.tab==="hosts") showHost(r); else if(S.tab==="dns") showDNS(r);
+  if(S.tab==="flags") showFinding(r); else if(S.tab==="packets") showPacket(r); else if(S.tab==="conns") showConn(r); else if(S.tab==="hosts") showHost(r); else if(S.tab==="dns") showDNS(r);
   else if(S.tab==="apps"){ setTab("conns"); $("q").value = r.name; render(); }
 });
 let qt; $("q").addEventListener("input", ()=>{ clearTimeout(qt); qt=setTimeout(render,120); });
-$("dir").addEventListener("change", render); $("proto").addEventListener("change", render);
+$("dir").addEventListener("change", render); $("showOk").addEventListener("change", render); $("proto").addEventListener("change", render);
 $("pauseBtn").addEventListener("click", ()=>{ S.paused=!S.paused; $("pauseBtn").classList.toggle("on",S.paused); $("pauseBtn").textContent=S.paused?"Resume":"Pause"; if(!S.paused) poll(); else renderStats(); });
 $("clearBtn").addEventListener("click", async ()=>{ await fetch("/api/reset",{method:"POST"}); S.packets=[]; S.lastId=0; S.sel=null; $("detail").classList.remove("open"); poll(); });
 addEventListener("keydown", e=>{ if(e.key==="Escape") closeDetail(); if(e.key==="/" && document.activeElement!==$("q")){ e.preventDefault(); $("q").focus(); } });
